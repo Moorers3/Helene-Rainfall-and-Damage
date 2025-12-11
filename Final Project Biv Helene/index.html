@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Western NC Rainfall & Major Road Damage Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.0/dist/leaflet.css"/>
+<link href="https://fonts.googleapis.com/css?family=Titillium+Web" rel="stylesheet">
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.14.0/css/all.css">
+<style>
+  html, body { width: 100%; height: 100%; margin: 0; }
+  #map { width: 100%; height: 80%; }
+  body { font-family: 'Titillium Web', sans-serif; }
+  #title { font-size: 24px; font-weight: bold; text-align: center; margin: 10px; }
+  #paragraph { width: 90%; margin: 0 auto 10px auto; font-size: 16px; }
+  .legend {
+      line-height: 20px;
+      font-size: 14px;
+      color: #333;
+      background: rgba(255,255,255,0.8);
+      padding: 6px 8px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+      border-radius: 5px;
+      font-family: 'Titillium Web', sans-serif;
+  }
+  .legend i {
+      width: 18px;
+      height: 18px;
+      float: left;
+      margin-right: 8px;
+      opacity: 0.7;
+  }
+</style>
+<script src="https://unpkg.com/leaflet@1.7.0/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-ajax/2.1.0/leaflet.ajax.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chroma-js/2.4.2/chroma.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+</head>
+<body>
+
+<div id="title">Western NC Rainfall & Road Damage Map</div>
+<div id="paragraph">
+This map shows the extensive damage from Hurrican Helene. Included is Western NC counties that were most affected by Helene sorted by total rainfall, with icons showing where major road damage occured. The Charlotte Observer writes :"On Sept. 27, 2024, remnants of Hurricane Helene devastated Western North Carolina, killing 108 people and leaving a nearly $60 billion clean up bill statewide"
+
+Read more at<a href="https://www.charlotteobserver.com/news/state/north-carolina/article312065115.html#storylink=cpy" target="_blank">The Charlotte Observer</a>
+</div>
+
+<div id="map"></div>
+
+<script>
+  // 1. Create map
+  var map = L.map('map', {
+      center: [35.7, -82.7],
+      zoom: 7,
+      minZoom: 6,
+      maxZoom: 12
+  });
+
+  // 2. Add basemap
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.carto.com/">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 19
+  }).addTo(map);
+
+  // 3. Color scale for rainfall (bivariate choropleth)
+  var colorScale = chroma.scale(['#add8e6','#00008b']).domain([0, 35]); // adjust max rainfall accordingly
+
+  // 4. Polygon styling function
+  function stylePolygon(feature) {
+      return {
+          fillColor: feature.properties.total != null ? colorScale(feature.properties.total) : '#ccc',
+          weight: 2,
+          opacity: 1,
+          color: '#555',
+          fillOpacity: 0.7
+      };
+  }
+
+  // 5. Highlight on hover
+  function highlightFeature(e) {
+      var layer = e.target;
+      layer.setStyle({
+          weight: 3,
+          color: '#666',
+          fillOpacity: 0.9
+      });
+      if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) layer.bringToFront();
+  }
+  function resetHighlight(e) {
+      polygonLayer.resetStyle(e.target);
+  }
+
+  // 6. Popups and events for polygons
+  function onEachPolygon(feature, layer) {
+      var countyName = feature.properties.name; // replace with your actual property key
+      var totalRainfall = feature.properties.total != null ? feature.properties.total + " in" : "No data";
+      layer.bindPopup("<b>" + countyName + "</b><br>Rainfall: " + totalRainfall);
+      layer.on({
+          mouseover: highlightFeature,
+          mouseout: resetHighlight,
+          click: function(){ this.openPopup(); }
+      });
+  }
+
+  // 7. Load polygon GeoJSON
+  var polygonLayer = new L.GeoJSON.AJAX("assets/polygon.geojson", {
+      style: stylePolygon,
+      onEachFeature: onEachPolygon
+  }).addTo(map);
+
+  // 8. Add points with Font Awesome icons
+  // Generate style classes dynamically
+  var pointColors = ['#e41a1c']; 
+  for (var i=0; i<pointColors.length; i++) {
+      $('head').append($("<style>.marker-color-" + (i+1) + "{ color:" + pointColors[i] + "; font-size:18px; text-shadow:0 0 2px #fff;}</style>"));
+  }
+
+  // 9. Load point GeoJSON
+  $('head').append($("<style>.marker-color { color:#e41a1c; font-size:18px; text-shadow:0 0 2px #fff; }</style>"));
+
+var pointLayer = new L.GeoJSON.AJAX("assets/point.geojson", {
+    pointToLayer: function(feature, latlng) {
+        return L.marker(latlng, {icon: L.divIcon({className: 'fas fa-exclamation-triangle marker-color'})});
+    },
+    onEachFeature: function(feature, layer){
+        var content = "<b>" + (feature.properties.name || "No Name") + "</b><br>" +
+                      "Type: " + (feature.properties.type || "Unknown") + "<br>" +
+                      "Description: " + (feature.properties.description || "No description");
+        layer.bindPopup(content);
+    }
+}).addTo(map);
+
+// Legend
+var legend = L.control({position: 'topright'});
+legend.onAdd = function(map){
+    var div = L.DomUtil.create('div','legend');
+    div.innerHTML += "<b>Rainfall (inches)</b><br>";
+    var grades = [0, 10, 15, 20, 25];
+    for(var i=0; i<grades.length; i++){
+        div.innerHTML +=
+            '<i style="background:' + colorScale(grades[i]+1) + '"></i> ' +
+            grades[i] + (grades[i+1] ? '&ndash;' + grades[i+1] + '<br>' : '+');
+    }
+    div.innerHTML += "<hr><b>Road Damage Points</b><br>";
+    div.innerHTML += '<i class="fas fa-exclamation-triangle marker-color"></i> Road Damage<br>';
+    return div;
+};
+legend.addTo(map);
+  // 11. Add scale bar
+  L.control.scale({position:'bottomleft'}).addTo(map);
+
+  // 12. Add sources as attribution
+  map.attributionControl.addAttribution(
+      'NOAA NHC, NCDOT, North Carolina Emergency Management, The Charlotte Observer, WRAL. | Map Author: Riley Moore'
+  );
+
+</script>
+</body>
+</html>
